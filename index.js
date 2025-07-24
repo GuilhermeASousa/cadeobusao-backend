@@ -3,7 +3,7 @@ import express from 'express';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// --- Lógica de Cache e Busca (idêntica à anterior) ---
+// --- Lógica de Cache e Busca ---
 
 const vehicleCache = {};
 
@@ -18,8 +18,9 @@ function getFormattedDate(date) {
     return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
+// Funções de cálculo de distância e direção
 function calculateDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371e3; // Raio da Terra em metros
+    const R = 6371e3;
     const φ1 = lat1 * Math.PI / 180;
     const φ2 = lat2 * Math.PI / 180;
     const Δφ = (lat2 - lat1) * Math.PI / 180;
@@ -28,6 +29,7 @@ function calculateDistance(lat1, lon1, lat2, lon2) {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
 }
+
 function calculateBearing(lat1, lon1, lat2, lon2) {
     const φ1 = lat1 * Math.PI / 180;
     const φ2 = lat2 * Math.PI / 180;
@@ -38,20 +40,38 @@ function calculateBearing(lat1, lon1, lat2, lon2) {
     const θ = Math.atan2(y, x);
     return (θ * 180 / Math.PI + 360) % 360;
 }
+
+
 async function fetchAndProcessVehicles() {
-    console.log(`[${new Date().toISOString()}] Iniciando busca e processamento de veículos...`);
+    console.log(`[${new Date().toISOString()}] Iniciando busca de veículos...`);
     const brtApiUrl = 'https://dados.mobilidade.rio/gps/brt';
     const sppoApiUrlBase = 'https://dados.mobilidade.rio/gps/sppo';
 
     const now = new Date();
     const tenMinutesAgo = new Date(now.getTime() - 10 * 60 * 1000);
-    const sppoUri = `${sppoApiUrlBase}?dataInicial=${getFormattedDate(tenMinutesAgo)}&dataFinal=${getFormattedDate(now)}`;
+    const dataInicialFormatted = getFormattedDate(tenMinutesAgo).replace(' ', '+');
+    const dataFinalFormatted = getFormattedDate(now).replace(' ', '+');
+    const sppoUri = `${sppoApiUrlBase}?dataInicial=${dataInicialFormatted}&dataFinal=${dataFinalFormatted}`;
 
     try {
         const [brtResponse, sppoResponse] = await Promise.all([fetch(brtApiUrl), fetch(sppoUri)]);
-        const brtData = brtResponse.ok ? await brtResponse.json() : { veiculos: [] };
-        const sppoData = sppoResponse.ok ? await sppoResponse.json() : [];
-        const allVehiclesRaw = [...(brtData.veiculos || []), ...sppoData];
+
+        let brtVehicles = [];
+        if (brtResponse.ok) {
+            const brtData = await brtResponse.json();
+            brtVehicles = brtData.veiculos || [];
+        } else {
+            console.error(`ERRO API BRT: Status ${brtResponse.status}`);
+        }
+
+        let sppoVehicles = [];
+        if (sppoResponse.ok) {
+            sppoVehicles = await sppoResponse.json();
+        } else {
+            console.error(`ERRO API SPPO: Status ${sppoResponse.status}. URL: ${sppoUri}`);
+        }
+
+        const allVehiclesRaw = [...brtVehicles, ...sppoVehicles];
 
         for (const v of allVehiclesRaw) {
             const vehicleId = v.ordem || v.codigo;
@@ -79,25 +99,17 @@ async function fetchAndProcessVehicles() {
 
 // --- Configuração do Servidor Express ---
 
-// Endpoint que o seu aplicativo Flutter irá chamar
 app.get('/api/vehicles', (req, res) => {
-    // Retorna a lista de veículos que está no cache
     res.json(Object.values(vehicleCache));
 });
 
-// Endpoint de "saúde" para verificar se o servidor está no ar
 app.get('/', (req, res) => {
     res.send(`Servidor do Cadê o Ônibus? no ar. Veículos em cache: ${Object.keys(vehicleCache).length}`);
 });
 
 
-// Inicia o servidor e a lógica de atualização
 app.listen(PORT, () => {
     console.log(`Servidor rodando na porta ${PORT}`);
-
-    // 1. Faz uma busca inicial imediatamente ao iniciar o servidor
     fetchAndProcessVehicles();
-
-    // 2. Configura o intervalo para rodar a cada 20 segundos
-    setInterval(fetchAndProcessVehicles, 20000); // 20000 milissegundos = 20 segundos
+    setInterval(fetchAndProcessVehicles, 20000);
 });
