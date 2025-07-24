@@ -2,12 +2,14 @@
   "name": "cadeobusao-backend",
   "version": "1.0.0",
   "description": "Backend service for CadeoBusao app",
-  "main": "api/vehicles.js",
-  "type": "module",
+  "main": "index.js",
   "scripts": {
-    "start": "node api/vehicles.js"
+    "start": "node index.js"
   },
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "express": "^5.1.0"
+  }
 }
