@@ -57,18 +57,18 @@ async function fetchAndProcessVehicles() {
 
         for (const v of allVehiclesRaw) {
             const vehicleId = v.ordem || v.codigo;
-            if (!vehicleId) continue;
+            const dataHoraRaw = v.datahora || v.dataHora;
 
-            // Faz o parse dos valores numéricos primeiro
+            if (!vehicleId || !dataHoraRaw) continue;
+
             const latitude = parseFloat(String(v.latitude).replace(',', '.'));
             const longitude = parseFloat(String(v.longitude).replace(',', '.'));
             const velocidade = parseInt(v.velocidade, 10);
-            const dataHora = parseInt(v.datahora, 10);
+            const dataHora = parseInt(dataHoraRaw, 10);
 
             if (isNaN(latitude) || isNaN(longitude) || isNaN(velocidade) || isNaN(dataHora)) {
                 continue;
             }
-
             if (latitude === 0 || longitude === 0) continue;
 
             const oldVehicleData = vehicleCache[vehicleId];
