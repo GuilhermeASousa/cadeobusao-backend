@@ -1,4 +1,5 @@
 import express from 'express';
+import { formatInTimeZone } from 'date-fns-tz';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -6,17 +7,6 @@ const PORT = process.env.PORT || 3000;
 // --- Lógica de Cache e Busca ---
 
 const vehicleCache = {};
-
-function getFormattedDate(date) {
-    const pad = (num) => num.toString().padStart(2, '0');
-    const year = date.getFullYear();
-    const month = pad(date.getMonth() + 1);
-    const day = pad(date.getDate());
-    const hours = pad(date.getHours());
-    const minutes = pad(date.getMinutes());
-    const seconds = pad(date.getSeconds());
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-}
 
 // Funções de cálculo de distância e direção
 function calculateDistance(lat1, lon1, lat2, lon2) {
@@ -47,10 +37,11 @@ async function fetchAndProcessVehicles() {
     const brtApiUrl = 'https://dados.mobilidade.rio/gps/brt';
     const sppoApiUrlBase = 'https://dados.mobilidade.rio/gps/sppo';
 
-    const now = new Date();
+    const now = new Date(); // Pega o momento atual em UTC
     const tenMinutesAgo = new Date(now.getTime() - 10 * 60 * 1000);
-    const dataInicialFormatted = getFormattedDate(tenMinutesAgo).replace(' ', '+');
-    const dataFinalFormatted = getFormattedDate(now).replace(' ', '+');
+    const rioTimeZone = 'America/Sao_Paulo'; // Fuso horário do Rio
+    const dataInicialFormatted = formatInTimeZone(tenMinutesAgo, rioTimeZone, 'yyyy-MM-dd+HH:mm:ss');
+    const dataFinalFormatted = formatInTimeZone(now, rioTimeZone, 'yyyy-MM-dd+HH:mm:ss');
     const sppoUri = `${sppoApiUrlBase}?dataInicial=${dataInicialFormatted}&dataFinal=${dataFinalFormatted}`;
 
     try {
