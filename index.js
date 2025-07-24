@@ -4,8 +4,6 @@ import { formatInTimeZone } from 'date-fns-tz';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// --- Lógica de Cache e Busca ---
-
 const vehicleCache = {};
 
 // Funções de cálculo de distância e direção
@@ -37,30 +35,23 @@ async function fetchAndProcessVehicles() {
     const brtApiUrl = 'https://dados.mobilidade.rio/gps/brt';
     const sppoApiUrlBase = 'https://dados.mobilidade.rio/gps/sppo';
 
-    const now = new Date(); // Pega o momento atual em UTC
+    const now = new Date();
     const tenMinutesAgo = new Date(now.getTime() - 10 * 60 * 1000);
-    const rioTimeZone = 'America/Sao_Paulo'; // Fuso horário do Rio
+    const rioTimeZone = 'America/Sao_Paulo';
+
     const dataInicialFormatted = formatInTimeZone(tenMinutesAgo, rioTimeZone, 'yyyy-MM-dd+HH:mm:ss');
     const dataFinalFormatted = formatInTimeZone(now, rioTimeZone, 'yyyy-MM-dd+HH:mm:ss');
+
     const sppoUri = `${sppoApiUrlBase}?dataInicial=${dataInicialFormatted}&dataFinal=${dataFinalFormatted}`;
 
     try {
         const [brtResponse, sppoResponse] = await Promise.all([fetch(brtApiUrl), fetch(sppoUri)]);
 
-        let brtVehicles = [];
-        if (brtResponse.ok) {
-            const brtData = await brtResponse.json();
-            brtVehicles = brtData.veiculos || [];
-        } else {
-            console.error(`ERRO API BRT: Status ${brtResponse.status}`);
-        }
+        let brtVehicles = brtResponse.ok ? (await brtResponse.json()).veiculos || [] : [];
+        let sppoVehicles = sppoResponse.ok ? await sppoResponse.json() : [];
 
-        let sppoVehicles = [];
-        if (sppoResponse.ok) {
-            sppoVehicles = await sppoResponse.json();
-        } else {
-            console.error(`ERRO API SPPO: Status ${sppoResponse.status}. URL: ${sppoUri}`);
-        }
+        if (!brtResponse.ok) console.error(`ERRO API BRT: Status ${brtResponse.status}`);
+        if (!sppoResponse.ok) console.error(`ERRO API SPPO: Status ${sppoResponse.status}. URL: ${sppoUri}`);
 
         const allVehiclesRaw = [...brtVehicles, ...sppoVehicles];
 
@@ -68,17 +59,37 @@ async function fetchAndProcessVehicles() {
             const vehicleId = v.ordem || v.codigo;
             if (!vehicleId) continue;
 
-            const newPosition = { lat: parseFloat(String(v.latitude).replace(',', '.')), lon: parseFloat(String(v.longitude).replace(',', '.')) };
-            if (newPosition.lat === 0 || newPosition.lon === 0) continue;
+            // Faz o parse dos valores numéricos primeiro
+            const latitude = parseFloat(String(v.latitude).replace(',', '.'));
+            const longitude = parseFloat(String(v.longitude).replace(',', '.'));
+            const velocidade = parseInt(v.velocidade, 10);
+            const dataHora = parseInt(v.datahora, 10);
+
+            if (isNaN(latitude) || isNaN(longitude) || isNaN(velocidade) || isNaN(dataHora)) {
+                continue;
+            }
+
+            if (latitude === 0 || longitude === 0) continue;
 
             const oldVehicleData = vehicleCache[vehicleId];
             let direction = oldVehicleData ? oldVehicleData.direcao : null;
-            if (oldVehicleData && (oldVehicleData.latitude !== newPosition.lat || oldVehicleData.longitude !== newPosition.lon)) {
-                if (calculateDistance(oldVehicleData.latitude, oldVehicleData.longitude, newPosition.lat, newPosition.lon) > 10) {
-                    direction = calculateBearing(oldVehicleData.latitude, oldVehicleData.longitude, newPosition.lat, newPosition.lon);
+            if (oldVehicleData && (oldVehicleData.latitude !== latitude || oldVehicleData.longitude !== longitude)) {
+                if (calculateDistance(oldVehicleData.latitude, oldVehicleData.longitude, latitude, longitude) > 10) {
+                    direction = calculateBearing(oldVehicleData.latitude, oldVehicleData.longitude, latitude, longitude);
                 }
             }
-            vehicleCache[vehicleId] = { codigo: vehicleId, linha: v.linha, dataHora: parseInt(v.datahora, 10), latitude: newPosition.lat, longitude: newPosition.lon, velocidade: parseInt(v.velocidade, 10), direcao: direction, sentido: v.sentido || null, trajeto: v.trajeto || null };
+
+            vehicleCache[vehicleId] = {
+                codigo: vehicleId,
+                linha: v.linha,
+                dataHora: dataHora,
+                latitude: latitude,
+                longitude: longitude,
+                velocidade: velocidade,
+                direcao: direction,
+                sentido: v.sentido || null,
+                trajeto: v.trajeto || null
+            };
         }
         console.log(`Cache atualizado. Total de veículos: ${Object.keys(vehicleCache).length}`);
 
@@ -89,15 +100,8 @@ async function fetchAndProcessVehicles() {
 
 
 // --- Configuração do Servidor Express ---
-
-app.get('/api/vehicles', (req, res) => {
-    res.json(Object.values(vehicleCache));
-});
-
-app.get('/', (req, res) => {
-    res.send(`Servidor do Cadê o Ônibus? no ar. Veículos em cache: ${Object.keys(vehicleCache).length}`);
-});
-
+app.get('/api/vehicles', (req, res) => res.json(Object.values(vehicleCache)));
+app.get('/', (req, res) => res.send(`Servidor do Cadê o Ônibus? no ar. Veículos em cache: ${Object.keys(vehicleCache).length}`));
 
 app.listen(PORT, () => {
     console.log(`Servidor rodando na porta ${PORT}`);
