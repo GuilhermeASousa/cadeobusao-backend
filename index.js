@@ -106,5 +106,5 @@ app.get('/', (req, res) => res.send(`Servidor do Cadê o Ônibus? no ar. Veícul
 app.listen(PORT, () => {
     console.log(`Servidor rodando na porta ${PORT}`);
     fetchAndProcessVehicles();
-    setInterval(fetchAndProcessVehicles, 20000);
+    setInterval(fetchAndProcessVehicles, 10000);
 });
